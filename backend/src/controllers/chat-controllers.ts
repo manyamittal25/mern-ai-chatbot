@@ -28,7 +28,8 @@ export const generateChatCompletion = async (
 
     const openai = new OpenAIApi(config);
     console.log(config);
-
+    
+  
    
     // get latest response
     try{ const chatResponse = await openai.createChatCompletion({
