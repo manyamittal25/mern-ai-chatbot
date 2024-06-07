@@ -1,53 +1,51 @@
-import { NextFunction, Request, Response } from "express";
-import User from "../models/User.js";
-import { configureOpenAI } from "../config/openai-config.js";
-import { OpenAIApi, ChatCompletionRequestMessage } from "openai";
-export const generateChatCompletion = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const { message } = req.body;
-  //try {
-    const user = await User.findById(res.locals.jwtData.id);
-    if (!user)
-      return res
-        .status(401)
-        .json({ message: "User not registered OR Token malfunctioned" });
-    // grab chats of user
-    const chats = user.chats.map(({ role, content }) => ({
-      role,
-      content,
-    })) as ChatCompletionRequestMessage[];
-    chats.push({ content: message, role: "user" });
-    user.chats.push({ content: message, role: "user" });
-    console.log(chats);
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import User from '../models/User.js';
 
-    // send all chats with new one to openAI API
-    const config = configureOpenAI();
+const genAI = new GoogleGenerativeAI("AIzaSyCZHbUXAFPJxHzD5McDVKLZzX0gZQoXkGo");
 
-    const openai = new OpenAIApi(config);
-    console.log(config);
+export const generateChatCompletion = async (req, res, next) => {
+    try {
+        const { message } = req.body;
 
-   
-    // get latest response
-    try{ const chatResponse = await openai.createChatCompletion({
-      model: "gpt-3.5-turbo",
-      messages: chats,
-    });
-    console.log(chatResponse);
-    user.chats.push(chatResponse.data.choices[0].message);
-    await user.save();
-    return res.status(200).json({ chats: user.chats }); }
-    catch (error) {
-      console.log(error.message);
+        // Get the generative model
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        // Find the user by ID from the JWT data
+        const user = await User.findById(res.locals.jwtData.id);
+        if (!user) {
+            return res.status(401).json({ message: "User not registered OR Token malfunctioned" });
+        }
+
+        // Grab chats of user
+        const chats = user.chats.map(({ role, content }) => ({
+            role,
+            content,
+        }));
+
+        // Add the new user message to the chats
+        chats.push({ content: message, role: 'user' });
+        user.chats.push({ content: message, role: 'user' });
+        
+        // Generate content based on the prompt
+        const result = await model.generateContent(message);
+
+        // Extract the text response from the result
+        const response = await result.response;
+        const text = response.text();
+        
+        // Add the AI response to the user's chat history
+        user.chats.push({ content: text, role: 'assistance' });
+        await user.save();
+
+        // Send the text response back to the client
+        return res.status(200).json({ chats: user.chats });
+    } catch (error) {
+        // Handle errors
+        console.error("Error:", error.message);
+        res.status(500).json({ error: "Internal server error" });
     }
-   
-  /*} catch (error) { 
-    console.log(error);
-    return res.status(500).json({ message: "Something went wrong" });
-  }*/
 };
+
 
 export const sendChatsToUser = async (
   req: Request,
